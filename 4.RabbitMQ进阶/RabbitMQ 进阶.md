@@ -17,6 +17,10 @@ thumbnail: http://img.yuzh.xyz/20190924164555_7pvwjM_timothy-meinberg-dKpMUOG8ck
         - [为什么备份交换器的类型要设置为 fanout？](#%E4%B8%BA%E4%BB%80%E4%B9%88%E5%A4%87%E4%BB%BD%E4%BA%A4%E6%8D%A2%E5%99%A8%E7%9A%84%E7%B1%BB%E5%9E%8B%E8%A6%81%E8%AE%BE%E7%BD%AE%E4%B8%BA-fanout)
         - [使用备份交换器的一些注意点](#%E4%BD%BF%E7%94%A8%E5%A4%87%E4%BB%BD%E4%BA%A4%E6%8D%A2%E5%99%A8%E7%9A%84%E4%B8%80%E4%BA%9B%E6%B3%A8%E6%84%8F%E7%82%B9)
 - [过期时间（TTL）](#%E8%BF%87%E6%9C%9F%E6%97%B6%E9%97%B4ttl)
+    - [设置消息的 TTL](#%E8%AE%BE%E7%BD%AE%E6%B6%88%E6%81%AF%E7%9A%84-ttl)
+        - [全部消息的 TTL](#%E5%85%A8%E9%83%A8%E6%B6%88%E6%81%AF%E7%9A%84-ttl)
+        - [单条消息的 TTL](#%E5%8D%95%E6%9D%A1%E6%B6%88%E6%81%AF%E7%9A%84-ttl)
+    - [设置队列的 TTL](#%E8%AE%BE%E7%BD%AE%E9%98%9F%E5%88%97%E7%9A%84-ttl)
 - [死信队列（DLX）](#%E6%AD%BB%E4%BF%A1%E9%98%9F%E5%88%97dlx)
 - [延迟队列](#%E5%BB%B6%E8%BF%9F%E9%98%9F%E5%88%97)
 - [优先级队列](#%E4%BC%98%E5%85%88%E7%BA%A7%E9%98%9F%E5%88%97)
@@ -163,7 +167,155 @@ public class AlternateConsumer {
 - 如果 AE 和 mandatory 参数一起使用，mandatory 参数将会无效。
 
 ## 过期时间（TTL）
+TTL，全称 Time To Live，即过期时间。RabbitMQ 可以设置队列和消息的过期时间。
+
+### 设置消息的 TTL
+有两种方式可以设置消息的过期时间，一种是通过队列属性设置，队列中的所有消息都有相同的过期时间；一种是对消息本身进行单独设置，每条消息的 TTL 可以不同。
+
+如果两者都定义了，则以数值小的那个为准。消息如果过期，会变成「死信」，消费者无法再次收到该消息（不是绝对的，见后续知识点。）
+
+#### 全部消息的 TTL
+通过队列属性设置消息 TTL 的方法是在 channel.queueDeclare 中指定 `x-message-ttl` 参数实现的，单位毫秒。
+
+```java
+channel.exchangeDeclare("demoExchange", "direct", true, false, false, null);
+
+Map<String, Object> map = new HashMap<>();
+map.put("x-message-ttl", 6000);
+
+// 设置整个队列中消息的过期时间
+channel.queueDeclare("demoQueue", true, false, false, map);
+channel.queueBind("demoQueue", "demoExchange", "demoRoutingKey", null);
+```
+
+> 注意：执行代码如果出现报错 “inequivalent arg 'x-message-ttl' for queue” 那是因为该队列已经创建了，设置 ttl 等于重新创建了一个重名的队列。
+> 测试情况下可以执行删除命令：**rabbitmqctl delete_queue 队列名**
+
+还可以通过 Policy 和 HTTP 方式设置 TTL，这里不再深入。
+
+> 如果 TTL = 0，则表示除非此时可以直接将消息投递给消费者，否则该消息会被丢弃。这个特性一定在部分上代替了 immediate 属性，之所以部分代替是因为 immdiate 属性在投递失败时会将消息返回。
+
+#### 单条消息的 TTL
+针对每条消息设置 TTL 的方法是在 channel.basicPublish 方法中加入 `expiration` 的属性参数，单位为毫秒。
+
+```java
+String content = "收到一条消息：" + LocalDateTime.now();
+channel.basicPublish(
+        "demoExchange",
+        "demoRoutingKey",
+        true,
+        false,
+        new AMQP.BasicProperties()
+                .builder()
+                // 消息持久化
+                .deliveryMode(2)
+                // TTL
+                .expiration("6000")
+                .build(),
+        content.getBytes());
+
+```
+
+### 设置队列的 TTL
+通过 channel.queueDeclare 方法中的 `x-expires` 参数可以控制队列被删除前未使用状态的时间。未使用状态是指队列上没有任何消费者，也没有被重新声明，过期时间段内也没有调用过 basic.get 命令。
+
+x-expires 也是以毫秒为单位，不能设置为0，一下是实例代码：
+
+```java
+Map<String, Object> map = new HashMap<>();
+// 设置队列的过期时间
+map.put("x-expires",1800000);
+channel.queueDeclare("demoQueue", true, false, false, map);
+```
+
 ## 死信队列（DLX）
+DLX，全称为 Dead-Letter-Exchange，也可以称为死信交换器。当消息在队列中变为死信之后，它能重新被发送到一个交换器中，这个交换器就是 DLX，绑定 DLX 的队列被称之为「死信队列」。
+
+    可能把死信队列认为是 DLX 绑定的队列会好理解一点，一般称呼的时候就把 DLX 叫做死信队列，其实不然。
+
+消息变为死信一般是由于一下几种情况：
+
+- 消息被拒绝（Basic.Reject / Basic.Nack），并且设置了 requeue 为 false；
+- 消息过期；
+- 队列达到最大长度。
+
+DLX 跟一般交换器一样是个正常的交换器，它通过设置某个正常队列的属性，使其成为该队列的 DLX。当该队列存在死信时，RabbitMQ 会自动将这个消息重新发布到指定的 DLX 上去，进而被路由到死信队列。因此可以监听该死信队列做相应的处理。
+
+> PS：这个特性与将 TTL 设置为 0 配合使用可以实现 immediate 属性的效果。
+>
+> 回顾：immediate 属性是如果消息所在的队列没有消费者订阅，消息将被返回。
+>
+> 如何实现效果的？
+> 1. 将 TTL 设置为 0：没有消费者订阅进入死信队列，
+> 2. 监听死信队列，实现消息返回的逻辑。
+
+**死信队列的实现方式是给一个正常的队列指定一个死信交换器（DLX）**，以下是实例代码（Producer）：
+
+```java
+public static void main(String[] args) throws IOException, TimeoutException {
+    ConnectionFactory factory = new ConnectionFactory();
+    factory.setPort(5672);
+    factory.setHost("127.0.0.1");
+    factory.setUsername("root");
+    factory.setPassword("root");
+
+    Connection connection = factory.newConnection();
+    Channel channel = connection.createChannel();
+
+    /*---------------------------------------------------
+      1. 创建一个死信交换器 DLX，实则跟正常交换器没有任何不同
+      2. 创建一个死信队列，跟正常队列没有任何不同
+      3. 死信交换器与死信队列绑定
+     ---------------------------------------------------*/
+    channel.exchangeDeclare("exchange.dlx", "direct", true, false, false, null);
+    channel.queueDeclare("queue.dlx", true, false, false, null);
+    channel.queueBind("queue.dlx", "exchange.dlx", "routingKey.dlx", null);
+
+    // 设置正常队列的属性：1.设置队列消息过期时间，以便消息成为死信；2.设置该队列的死信交换器；3.设置该队列中消息到死信交换器的路由键（与上一行代码的绑定键保持一致）
+    Map<String, Object> map = new HashMap<>();
+    map.put("x-message-ttl", 10000);
+    map.put("x-dead-letter-exchange", "exchange.dlx");
+    map.put("x-dead-letter-routing-key", "routingKey.dlx");
+
+    /*---------------------------------------------------
+      1. 定义一个正常交换器
+      2. 定义一个正常队列，通过添加队列参数指定「死信交换器 DLX」
+      3. 正常交换器与正常队列绑定
+     ---------------------------------------------------*/
+    channel.exchangeDeclare("exchange.normal", "fanout", false, false, null);
+    channel.queueDeclare("queue.normal", true, false, false, map);
+    channel.queueBind("queue.normal", "exchange.normal", "routingKey.normal", null);
+
+    String content = "这是一条测试死信队列（DLX）的消息，currentTime: " + LocalDateTime.now();
+    channel.basicPublish("exchange.normal", "randomKey", true, false,
+            new AMQP.BasicProperties().builder().deliveryMode(2).contentType("text/plain").build(),
+            content.getBytes());
+
+    connection.close();
+}
+```
+
+代码含义在注释里写的很清楚了，这里需要注意的一点是不要把「死信队列」的写法和「备份交换器」的写法混淆了：
+
+- 备份交换器是指定参数，添加到 **主交换器** 的定义方法上 `channel.eexchangeDeclare`。
+- 死信队列是指定参数，添加到 **主队列** 的定义方法上 `channel.queueDeclare`。
+
+**上述代码消息发送之后的执行流程：**
+
+1. 生产者发送携带路由键为 randomKey 的消息，经过 exchange.normal 顺利存储到 queue.normal 中；
+2. 由于 queue.normal 设置了过期时间，消息在 10s 内没有消费者消费该消息，判定消息过期，变成死信消息；
+3. 由于 queue.normal 设置了 DLX，死信消息丢给了 exchange.dlx;
+4. 根据 queue.normal 设置的 DLK（dead-letter-routingKey），exchange.dlx 匹配到了 queue.dlx，从而消息被存储到 queue.dlx 这个死信队列中去了。
+
+![](http://img.yuzh.xyz/20190924231013_QVOi6a_Screenshot.png)
+
+_验证 1：创建两个消费者，一个消费 queue.normal，一个消费 queue.dlx。单独启动一个消费者和生产者，再启动全部消费者和生产者，查看控制台输出_
+
+_验证 2：不启动消费者，启动生产者。然后多次执行 rabbitmqctl list_queues 命令，查看输出效果。_
+
+> DLX 是一个非常有用的特性，可以通过消费死信队列的消息来处理消息不能被正常消费的异常情况。从而改善和优化系统。
+DLX 和 TTL 配合还可以实现「延迟队列」的功能。
+
 ## 延迟队列
 ## 优先级队列
 ## RPC 实现
