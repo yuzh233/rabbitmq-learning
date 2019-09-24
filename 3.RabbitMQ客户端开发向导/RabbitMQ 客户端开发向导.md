@@ -8,19 +8,23 @@ thumbnail: http://img.yuzh.xyz/20190921153731_iYJOZ9_tj-sedisa-3K9XZD3cpis-unspl
 
 <h1>第三章：RabbitMQ 客户端开发向导</h1>
 <h2>Table Of Contents</h2>
+
 <!-- TOC -->
+
 - [连接 RabbitMQ](#%E8%BF%9E%E6%8E%A5-rabbitmq)
 - [使用交换器和队列](#%E4%BD%BF%E7%94%A8%E4%BA%A4%E6%8D%A2%E5%99%A8%E5%92%8C%E9%98%9F%E5%88%97)
     - [exchangeDeclare 方法](#exchangedeclare-%E6%96%B9%E6%B3%95)
     - [queueDeclare 方法](#queuedeclare-%E6%96%B9%E6%B3%95)
     - [queueBind 方法](#queuebind-%E6%96%B9%E6%B3%95)
     - [exchangeBind 方法](#exchangebind-%E6%96%B9%E6%B3%95)
-    - [何时创建](#%E4%BD%95%E6%97%B6%E5%88%9B%E5%BB%BA)
 - [发送消息](#%E5%8F%91%E9%80%81%E6%B6%88%E6%81%AF)
 - [消费消息](#%E6%B6%88%E8%B4%B9%E6%B6%88%E6%81%AF)
     - [推模式](#%E6%8E%A8%E6%A8%A1%E5%BC%8F)
     - [拉模式](#%E6%8B%89%E6%A8%A1%E5%BC%8F)
 - [消费端的确认与拒绝](#%E6%B6%88%E8%B4%B9%E7%AB%AF%E7%9A%84%E7%A1%AE%E8%AE%A4%E4%B8%8E%E6%8B%92%E7%BB%9D)
+    - [确认（basic.ack）](#%E7%A1%AE%E8%AE%A4basicack)
+    - [拒绝（basic.reject）](#%E6%8B%92%E7%BB%9Dbasicreject)
+    - [重新入队（basic.recover）](#%E9%87%8D%E6%96%B0%E5%85%A5%E9%98%9Fbasicrecover)
 - [关闭连接](#%E5%85%B3%E9%97%AD%E8%BF%9E%E6%8E%A5)
 - [小结](#%E5%B0%8F%E7%BB%93)
 
