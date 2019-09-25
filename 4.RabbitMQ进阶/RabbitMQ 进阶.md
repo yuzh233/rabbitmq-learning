@@ -219,7 +219,7 @@ channel.basicPublish(
 ### 设置队列的 TTL
 通过 channel.queueDeclare 方法中的 `x-expires` 参数可以控制队列被删除前未使用状态的时间。未使用状态是指队列上没有任何消费者，也没有被重新声明，过期时间段内也没有调用过 basic.get 命令。
 
-x-expires 也是以毫秒为单位，不能设置为0，一下是实例代码：
+x-expires 也是以毫秒为单位，不能设置为0，以下是实例代码：
 
 ```java
 Map<String, Object> map = new HashMap<>();
@@ -317,6 +317,18 @@ _验证 2：不启动消费者，启动生产者。然后多次执行 rabbitmqct
 DLX 和 TTL 配合还可以实现「延迟队列」的功能。
 
 ## 延迟队列
+延迟队列存储的对象是对应的延迟消息，延迟消息是指当消息被发送之后，并不想让消费者立即拿到消息，而是等待特定时间之后，消息者才能拿到这个消息进行消费。
+
+在 RabbitMQ 中并没有直接支持延迟队列的功能，但是能通过 TTL + DLX 模拟出延迟队列的效果。
+
+如下图所示：
+
+1. 我们为一个正常队列（queue.normal）指定一个死信队列（queue.dlx），并为 queue.normal 设置一个过期时间；
+2. 消费者订阅的不是 queue.normal，而是 queue.dlx。
+3. 生产者通过 exchange.normal 将消息存储到 queue.normal，消息过期后被存到死信队列，消费者恰巧在延迟时间后消费到这个消息。
+
+![](http://img.yuzh.xyz/20190925103243_4Xp1Kp_Screenshot.png)
+
 ## 优先级队列
 ## RPC 实现
 ## 持久化
