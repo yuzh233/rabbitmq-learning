@@ -330,6 +330,31 @@ DLX 和 TTL 配合还可以实现「延迟队列」的功能。
 ![](http://img.yuzh.xyz/20190925103243_4Xp1Kp_Screenshot.png)
 
 ## 优先级队列
+定义一个队列的最高优先级，发布消息时指定该消息的优先级别，优先级别高的消息具有优先被消费的特权。
+
+通过设置队列的 `x-max-priority` 属性来实现，以下是实例代码：
+
+```java
+Map<String, Object> map = new HashMap<>();
+// 设置队列的最高级别是多少
+map.put("x-max-priority", 10);
+
+channel.exchangeDeclare("exchange.normal", "fanout", true, false, false, null);
+channel.queueDeclare("queue.normal", true, false, false, map);
+channel.queueBind("queue.normal", "exchange.normal", "routingKey.normal", null);
+
+String content = "这是一条具有优先级的消息，currentTime: " + LocalDateTime.now();
+channel.basicPublish("exchange.normal", "random.routingKey", true, false,
+        new AMQP.BasicProperties().builder().deliveryMode(2).contentType("text/plain")
+                // 设置该条消息的级别是 5
+                .priority(5)
+                .build(),
+        content.getBytes());
+```
+
+以上代码队列的最高优先级别为 10，消息的级别为 5。消息级别默认最低为 0，优先级高的消息可以被优先消费。但是需要注意，在消息没有堆积的情况下，对消息设置级别没有意义，因为生产者生产一条消息就被消费掉，队列永远只有一条消息，对于队列只有一条消息设置优先级是没有意义的。
+
+
 ## RPC 实现
 ## 持久化
 ## 生产者确认
